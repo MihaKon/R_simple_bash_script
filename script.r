@@ -41,25 +41,19 @@ get_parser <- function() {
     "--input",
     help = "Input file",
     type = "character",
-    required = TRUE
+    default = "test.csv"
   )
   parser$add_argument(
     "--grouping_column",
     type = "character",
     help = "Name of the column used for grouping data", 
-    required = TRUE
+    default = "grupa"
   )
   parser$add_argument(
-    "--save_plot",
-    type = "logical",
-    help = "Whether to save the plots as PNG files (TRUE or FALSE)",
-    default = FALSE
-  )
-  parser$add_argument(
-    "--output",
-    help = "Output file, when parsed output raport will be created",
+    "--control_group_name",
     type = "character",
-    default = FALSE
+    help = "Whether to save the plots as PNG files (TRUE or FALSE)",
+    default = "KONTROLA"
   )
   parser$add_argument(
     "--quiet",
@@ -153,6 +147,9 @@ get_column_characteristic <- function(data, group_column_name, target_column_nam
 }
 
 perform_statistical_analysis <- function(data, group_column_name, target_column_name) {
+  if (target_column_name == group_column_name) {
+    return(NULL)
+  }
   kruskal_test_result <- kruskal.test(as.formula(paste(target_column_name, "~", group_column_name)), data = data)
   
   if (kruskal_test_result$p.value < 0.05) {
@@ -188,6 +185,14 @@ find_correlation_description <- function(correlation_coefficient) {
 }
 
 print_group_correlation <- function(data, grouping_column, control_group_name) {
+  if (!grouping_column %in% names(data)) {
+    stop("grouping_column does not exist in the dataframe")
+  }
+  
+  if (!control_group_name %in% unique(data[[grouping_column]])) {
+    stop("control_group_name is not found in the grouping_column")
+  }
+
   control_data <- data %>% dplyr::filter(!!rlang::sym(grouping_column) == control_group_name)
   
   groups <- unique(data[[grouping_column]])
@@ -219,6 +224,8 @@ main <- function() {
   
   fill_na_result <- fill_na(data = data)
   fille_data <- fill_na_result$data
+
+  write.csv(fille_data, file = "filled_data.csv", row.names = FALSE)
   
   outliers_report <- get_shapiro_test_results(fille_data, args$grouping_column)
 
@@ -249,6 +256,4 @@ main <- function() {
   }
 }
 
-if (interactive() == FALSE) {
-  main()
-}
+main()
