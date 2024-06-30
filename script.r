@@ -152,13 +152,61 @@ get_column_characteristic <- function(data, group_column_name, target_column_nam
   return(stats_data)
 }
 
+perform_statistical_analysis <- function(data, group_column_name, target_column_name) {
+  kruskal_test_result <- kruskal.test(as.formula(paste(target_column_name, "~", group_column_name)), data = data)
+  
+  if (kruskal_test_result$p.value < 0.05) {
+    post_hoc_result <- pairwise.wilcox.test(data[[target_column_name]], data[[group_column_name]], p.adjust.method = "BH")
+    return(list("kruskal" = kruskal_test_result, "post_hoc" = post_hoc_result))
+  } else {
+    return(list("kruskal" = kruskal_test_result))
+  }
+}
+
+plot_group_comparisons <- function(data, group_column_name, target_column_name) {
+  library(ggplot2)
+  
+  ggplot(data, aes_string(x = group_column_name, y = target_column_name, color = group_column_name)) +
+    geom_point() +
+    theme_minimal() +
+    ggtitle(paste("Comparison of", target_column_name, "across", group_column_name)) +
+    theme(plot.title = element_text(hjust = 0.5))
+}
+
+save_comparison_plot <- function(data, group_column_name, target_column_name) {
+  plot <- plot_group_comparisons(data, group_column_name, target_column_name)
+  ggsave(paste0(target_column_name, ".png"), plot)
+}
+
+find_correlation_description <- function(correlation_coefficient) {
+  for (i in 1:nrow(CORRELATION_MAPPING)) {
+    if (correlation_coefficient >= CORRELATION_MAPPING$lower_bound[i] && correlation_coefficient <= CORRELATION_MAPPING$upper_bound[i]) {
+      return(CORRELATION_MAPPING$correlation[i])
+    }
+  }
+  return("Correlation out of range")
+}
+
 print_group_correlation <- function(data, grouping_column, control_group_name) {
   control_data <- data %>% dplyr::filter(!!rlang::sym(grouping_column) == control_group_name)
   
+  groups <- unique(data[[grouping_column]])
+  groups <- groups[groups != control_group_name]
   
-  
-  for (column in names(data)) {
-    kruskal_test_p_value <- kruskal.test(column ~ grupa, data = data)$p_value
+  for (target_column_name in colnames(data)) {
+    if (target_column_name != grouping_column) {
+      
+      print(paste("Analyzing", target_column_name, "column:"))
+      
+      for (group in groups) {
+        group_data <- data %>% dplyr::filter(!!rlang::sym(grouping_column) == group)
+        combined_data <- rbind(control_data, group_data)
+        
+        kruskal_test_result <- kruskal.test(as.formula(paste(target_column_name, "~", grouping_column)), data = combined_data)
+        correlation_description <- find_correlation_description(kruskal_test_result$p.value)
+        print(paste("Kruskal-Wallis test for", group, "vs", control_group_name, "in", target_column_name, ":", correlation_description))
+      }
+    }
   }
 }
 
@@ -170,19 +218,20 @@ main <- function() {
   data <- read.csv(args$input, sep = ";", dec = ",", header = TRUE)
   
   fill_na_result <- fill_na(data = data)
-  data <- fill_na_result$data
+  fille_data <- fill_na_result$data
   
-  outliers_report <- get_shapiro_test_results(data, args$grouping_column)
+  outliers_report <- get_shapiro_test_results(fille_data, args$grouping_column)
 
-
-  for (column in names(data)) {
-    column_characteristic <- get_column_characteristic(data, args$grouping_column, column)
+  column_characteristics_list <- list()
+  for (column in names(fille_data)) {
+    column_characteristic <- get_column_characteristic(fille_data, args$grouping_column, column)
     column_characteristics_list[[column]] <- column_characteristic
-
-    visualize_outliers(data, args$grouping_column, column, save_plot = args$save_plot)
-    anova_result <- get_anova_result(data, args$grouping_column, column)
+    
+    analysis_result <- perform_statistical_analysis(fille_data, args$grouping_column, column)
+    save_comparison_plot(fille_data, args$grouping_column, column)
   }
-  
+
+
   if (!args$quiet) {
     print("Filled values") 
     print(fill_na_result$report)
@@ -193,8 +242,10 @@ main <- function() {
       print(paste("Characteristics for", column))
       print(column_characteristics_list[[column]])
     }
-    print("ANOVA test")
-    print(anova_result)
+    print("Analysis Result")
+    print(analysis_result)
+    print("Group Correlation")
+    print_group_correlation(fille_data, args$grouping_column, args$control_group_name)
   }
 }
 
